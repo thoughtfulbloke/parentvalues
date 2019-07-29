@@ -1,0 +1,380 @@
+---
+title: "Important values of N.Z. parents"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+**Note**: This is the easy read (.md) version of the analysis showing figures, to view the analysis code consult the .Rmd version.
+
+```{r load_libraries_and_settings, warning=FALSE, message=FALSE}
+library(sjlabelled)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(forcats)
+library(ggthemes)
+library(ggrepel)
+library(janitor)
+
+pal_me <- c("#00508F", "#f9c013", "#1b1c20", "#ce2227", "#8f5800", "#22cec5", "#f9f913", "#8613f9")
+
+theme_me <- theme_minimal() + 
+  theme(plot.title = element_text(colour = "#00508F",
+                                  family = "Open Sans Light"),
+        plot.subtitle =  element_text(colour = "#00508F",
+                                  family = "Open Sans Light",
+                                  margin = margin(t = 0, r = 0, b = 20, l = 0)),
+        panel.grid = element_blank(),
+        axis.line.x = element_line(size=0.1,
+                                   colour = "#00508F"),
+        axis.line.y = element_line(size=0.1,
+                                   colour = "#00508F"),
+        axis.text = element_text(colour = "#00508F",
+                                 family = "Open Sans"),
+        axis.title = element_text(colour = "#00508F",
+                                 family = "Open Sans Light"),
+        axis.title.x = element_text(margin = margin(t = 20, r = 0, b = 0, l = 0)),
+        axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)),
+        axis.ticks = element_line(size=0.2,
+                                  colour = "#00508F"),
+        legend.text = element_text(colour = "#00508F",
+                                   family = "Open Sans Light"),
+        legend.title = element_text(colour = "#00508F",
+                                    family = "Open Sans")
+          )
+
+```
+
+
+```{r load_data}
+# I downloaded the rds format of the survey data and have the files in the same
+# directory as my code
+
+w6 <- readRDS("wvs6_2010_2014.rds")
+wave6 <- rep(6,ncol(w6))
+colnms6 <- names(w6)
+colabel6 <- sapply(colnms6, function(x){attr(w6[[x]], which="label")})
+
+w5 <- readRDS("wvs5_2005_2009.rds")
+wave5 <- rep(5,ncol(w5))
+colnms5 <- names(w5)
+colabel5 <- sapply(colnms5, function(x){attr(w5[[x]], which="label")})
+
+w3 <- readRDS("WV3_Data_R_v20180912.rds")
+wave3 <- rep(3,ncol(w3))
+colnms3 <- names(w3)
+colabel3 <- sapply(colnms3, function(x){attr(w3[[x]], which="label")})
+
+# want the numeric values ofr the years not the label attributes, so storing
+# then reapplying
+# also renaming some variables to make later merging of datasets easy
+yob3 <- as.vector(w3$V215)
+sy3 <- as.vector(w3$V238)
+wv3 <- w3 %>% mutate_all(sjlabelled::as_label)
+names(wv3) <- colabel3
+wv3 <- wv3 %>% clean_names("parsed") %>% 
+  rename(Survey_year = Year_of_survey,
+         How_many_children_do_you_have = How_many_children,
+         Country_Code = Country)
+wv3$Year_of_birth <- yob3
+wv3$Survey_year <- sy3
+names(wv3) = gsub("Children_qualities_", "Child_", names(wv3))
+names(wv3) = gsub("Child_Responsi", "Child_Feeling_of_responsi", names(wv3))
+
+
+wv5 <- w5 %>% mutate_all(sjlabelled::as_label)
+names(wv5) <- colabel5
+wv5 <- wv5 %>% clean_names("parsed") 
+
+#years are actual numbers
+yob6 <- as.vector(w6$V241)
+sy6 <- as.vector(w6$V262)
+wv6 <- w6 %>% mutate_all(sjlabelled::as_label)
+names(wv6) <- colabel6
+wv6 <- wv6 %>% clean_names("parsed") 
+wv6$Year_of_birth <- yob6
+wv6$Survey_year <- sy6
+names(wv6) = gsub("Important_child_qualities_", "Child_", names(wv6))
+names(wv6) = gsub("Child_indepen", "Child_Indepen", names(wv6))
+
+
+
+# metadata is a reference so I can look up stuff like description and column name
+metadata <- data.frame(wave = c(wave3, wave5, wave6),
+                      colnms = c(colnms3, colnms5, colnms6),
+                      description = c(colabel3, colabel5, colabel6),
+                      newnames = c(colnames(wv3), colnames(wv5), colnames(wv6)))
+
+```
+
+The World Values Survey (available at http://www.worldvaluessurvey.org/wvs.jsp ) is one of the two public sources of data about New Zealander's values that provide anonymised survey results of individual respondents. This survey can be used to explore what value are important to New Zealanders and sectors of the New Zealand population that can be derived from the data. New Zealand surveys were carried out in 1998 (wave 3, 1201 responses), 2004 (wave 5, 954 responses), and 2011 (wave 6, 841 responses).
+
+## Parental Hopes
+
+Among the questions asked was how many children the respondent has, and what the hopes are of the respondents for their children (measured by the mention of values in discussion). Topics monitored across all years were Independence, Hard Work, Responsibility, Imagination, Tolerance, Thrift, Determination, Faith, Unshelfishness,  and Obedience.
+
+Among New Zealand parents in the 2011 survey, the value most mentioned was, by a large margin, tolerance.
+
+```{r}
+wv6 %>% 
+  filter(Country_Code == "New Zealand", How_many_children_do_you_have !="None") %>% 
+  select(Child_Independence:Child_Obedience) %>%
+  mutate_all(as_character) %>% 
+  gather(behaviour, mentions, 
+         Child_Independence:Child_Obedience) %>% 
+  mutate(behaviour = gsub("Child_","", behaviour),
+         behaviour = gsub("_"," ", behaviour)) %>% 
+  group_by(behaviour) %>%
+  summarise(proportion = sum(mentions == "Mentioned")/n(),
+            error95 = 1.96 * sqrt(proportion * (1-proportion)/n()),
+            percent = round(proportion * 100,2),
+            error2sd = round(error95 * 100,2)) %>%
+  ungroup() %>% 
+  mutate(behaviour = fct_reorder(behaviour, proportion)) %>% 
+  ggplot(aes(y=behaviour, x=percent)) + 
+  geom_errorbarh(aes(xmin=percent-error2sd, xmax=percent+error2sd),
+                alpha=0.7, colour=pal_me[1], size=0.4, height=0.5) +
+  geom_point(alpha=0.7, colour=pal_me[1], size=2, shape=16) +
+  theme_me + ylab("important qualities") +
+  xlab("percentage of respondents mentioning quality (95% C.I.)") +
+  xlim(0,100) +  labs(subtitle="source: World Values Survey wave 6",
+    title="Important child qualities for New Zealand parents") +
+  theme()
+  
+```
+
+## Mothers and Fathers
+
+Based on the self-declared gender of the respondent, I can explore the degree to which particular qualities are gender specific within New Zealand. There is a small difference of opinion on the value of "Hard Work", but not enough to change the overall pattern of importance of each value.
+
+```{r}
+
+wv6 %>% 
+  filter(Country_Code == "New Zealand", How_many_children_do_you_have !="None") %>% 
+  select(Sex, Child_Independence:Child_Obedience) %>%
+  mutate_all(as_character) %>% 
+  gather(behaviour, mentions, 
+         Child_Independence:Child_Obedience) %>% 
+  mutate(behaviour = gsub("Child_","", behaviour),
+         behaviour = gsub("_"," ", behaviour)) %>% 
+  group_by(Sex, behaviour) %>%
+  summarise(proportion = sum(mentions == "Mentioned")/n(),
+            error95 = 1.96 * sqrt(proportion * (1-proportion)/n()),
+            percent = round(proportion * 100,2),
+            error2sd = round(error95 * 100,2)) %>%
+  ungroup() %>%  filter(Sex == "Female" | Sex == "Male") %>%
+  mutate(behaviour = fct_reorder(behaviour, proportion),
+         positioning = as.numeric(behaviour) + as.numeric(factor(Sex))/10 - 0.15) %>% 
+  ggplot(aes(y=behaviour, x=percent, colour=Sex)) + 
+  geom_blank() +
+  geom_point(aes(y=positioning),alpha=0.7, size=2, shape=16) +
+  geom_errorbarh(aes(xmin=percent-error2sd, xmax=percent+error2sd,
+                     y=positioning, colour=Sex),
+                alpha=0.7, size=0.4, height=0.5) +
+  theme_me + ylab("important qualities") + scale_colour_manual(values=pal_me[c(2,4)]) +
+  xlab("percentage of respondents mentioning quality (95% Confidence Intervals)") +
+  xlim(0,100) + labs(subtitle="source: World Values Survey wave 6",
+    title="Important child qualities for New Zealand parents,\nby parent's gender")
+```
+
+## Inferred age of children.
+
+The year of birth of the respondent is included in the data, which can be compared to the year of the survey to derive the age of the respondent. Given the average age of first child at time of survey was 28, I can assume that the majority of parents under the age of 40 have preteen children, the majority of parents aged 40 to 50 have teen children, and the majority of parents aged over 50 have adult children.
+
+As the age of parents, and thus their children, increases, the importance of children showing imagination decreases. The importance of children showing Responsibility increases with age, but this is not enough to significantly change the overall order of importance. What this graph also indicates is that if one is interested in specific mentioning qualities rate of age ranges, then the overall figures are a pretty good match for teens (largely in the centre of the ranges) and may need slight upward or downwards adjustment if another age subgroup is of interest.
+
+
+```{r}
+wv6 %>% 
+  filter(Country_Code == "New Zealand", How_many_children_do_you_have !="None") %>% 
+  select(Survey_year, Year_of_birth,
+          Child_Independence:Child_Obedience) %>%
+  mutate_if(is.factor, as_character) %>% 
+  gather(behaviour, mentions, 
+         Child_Independence:Child_Obedience) %>% 
+  mutate(age = as.numeric(Survey_year) - Year_of_birth,
+         cohort = case_when(age < 40 ~ "<40/Preteen kids",
+                            age < 50 ~ "40-49/teen kids",
+                            age > 49 ~ "50+/adult kids"),
+         behaviour = gsub("Child_","", behaviour),
+         behaviour = gsub("_"," ", behaviour)) %>%
+  group_by(cohort, behaviour) %>%
+  summarise(proportion = sum(mentions == "Mentioned")/n(),
+            error95 = 1.96 * sqrt(proportion * (1-proportion)/n()),
+            percent = round(proportion * 100,2),
+            error2sd = round(error95 * 100,2)) %>%
+  ungroup() %>%
+  mutate(behaviour = fct_reorder(behaviour, proportion),
+         positioning = as.numeric(behaviour) + as.numeric(factor(cohort))/10 - 0.2) %>% 
+  ggplot(aes(y=behaviour, x=percent, colour=cohort)) + 
+  geom_blank() +
+  geom_point(aes(y=positioning),alpha=0.7, size=2, shape=16) +
+  geom_errorbarh(aes(xmin=percent-error2sd, xmax=percent+error2sd,
+                     y=positioning, colour=cohort),
+                alpha=0.7, size=0.4, height=0.5) +
+  theme_me + ylab("important qualities") + scale_colour_manual(values=pal_me[c(1,2,4)]) +
+  xlab("percentage of respondents mentioning quality (95% Confidence Intervals)") +
+  xlim(0,100) + labs(subtitle="source: World Values Survey wave 6",
+    title="Important child qualities for New Zealand parents,
+by parent's age group/ children's inferred age band")
+
+
+```
+
+## Longitudinal
+
+Because the same questions were asked in 3 different survey years, I can compare cohorts to get some sense of if changes in values are occurring due to age or due to events of the time. For those answering the survey as respondents aged 28-40 in 1998, they can be compared to the respondents aged 41-53 at the same time, and those ages 41-53 in 2011.
+
+Hard work and Determination have become more important qualities from 1998 to 2011, but not by enough to change the relative importance of either in relation to the other qualities.
+
+```{r}
+wv3a <- wv3 %>% select(Survey_year, Year_of_birth,
+                       Country_Code, How_many_children_do_you_have,
+                       Child_Independence:Child_Obedience) %>%
+  mutate_if(is.factor, as_character)
+wv6a <- wv6 %>% select(Survey_year, Year_of_birth,
+                       Country_Code, How_many_children_do_you_have,
+                       Child_Independence:Child_Obedience) %>%
+  mutate_if(is.factor, as_character)
+
+bind_rows(wv3a, wv6a) %>% 
+  filter(Country_Code == "New Zealand", How_many_children_do_you_have !="None") %>% 
+  gather(behaviour, mentions, Child_Independence:Child_Obedience) %>% 
+  mutate(behaviour = gsub("Child_","", behaviour),
+         behaviour = gsub("_"," ", behaviour),
+         age = Survey_year - Year_of_birth,
+         cohort = case_when(age >= 28 & age <=40 & Survey_year == 1998 ~ "28-40 in 1998",
+                            age >= 41 & age <=53 & Survey_year == 1998 ~ "41-53 in 1998",
+                            age >= 41 & age <=53 & Survey_year == 2011 ~ "41-53 in 2011")) %>%
+  filter(!is.na(cohort)) %>%
+  group_by(cohort, behaviour) %>%
+  summarise(proportion = sum(mentions != "Not mentioned")/n(),
+            error95 = 1.96 * sqrt(proportion * (1-proportion)/n()),
+            percent = round(proportion * 100,2),
+            error2sd = round(error95 * 100,2)) %>%
+  ungroup() %>% 
+  mutate(behaviour = fct_reorder(behaviour, proportion),
+         positioning = as.numeric(behaviour) + as.numeric(factor(cohort))/10 - 0.2) %>% 
+  ggplot(aes(y=behaviour, x=percent, colour=cohort)) + 
+  geom_blank() +
+  geom_point(aes(y=positioning),alpha=0.7, size=2, shape=16) +
+  geom_errorbarh(aes(xmin=percent-error2sd, xmax=percent+error2sd,
+                     y=positioning, colour=cohort),
+                alpha=0.7, size=0.4, height=0.5) +
+  theme_me + ylab("important qualities") + scale_colour_manual(values=pal_me[c(1,2,4)]) +
+  xlab("percentage of respondents mentioning quality (95% Confidence Intervals)") +
+  xlim(0,100) + labs(subtitle="source: World Values Survey wave 6",
+    title="Important child qualities for New Zealand parents,
+by parental age cohorts and time")
+
+```
+
+## Wealth
+
+The World Values Survey includes the respondent's place in a 10 step (local) income band division. I can match this to the desired qualities in children to identify what values are income-sensitive.
+
+The qualities of Faith and Determination are both sensitive to income, however the range of Faith is over a small enough range of responses that income makes no difference to Faith in relation to other measures. The amount that the wish to see children display Determination and perserverance changes so much with income that it does change the relative importance of variables in the overall model. Tolerance is still most important, but the relative importance of other values shift around. I would also note that Determination is being seen as different to Hard work- the importance of Hard work itself is not changing as incomes increase beyond the mid-range.
+
+```{r fig.height=10, fig.width=8, warning=FALSE}
+wv6 %>% 
+  filter(Country_Code == "New Zealand", How_many_children_do_you_have !="None",
+         Scale_of_incomes != "No answer") %>%
+  select(Scale_of_incomes, Child_Independence:Child_Obedience) %>%
+  mutate_all(as_character) %>% 
+  gather(behaviour, mentions, 
+         Child_Independence:Child_Obedience) %>% 
+  mutate(behaviour = gsub("Child_","", behaviour),
+         behaviour = gsub("_"," ", behaviour)) %>% 
+  group_by(Scale_of_incomes, behaviour) %>%
+  summarise(proportion = sum(mentions == "Mentioned")/n(),
+            error95 = 1.96 * sqrt(proportion * (1-proportion)/n()),
+            percent = round(proportion * 100,2),
+            error2sd = round(error95 * 100,2)) %>% ungroup() %>% 
+  mutate(behaviour = fct_reorder(behaviour, proportion),
+         Scale_of_incomes = factor(Scale_of_incomes),
+         Scale_of_incomes = fct_relevel(Scale_of_incomes, "Lower step", "second step",
+                                        "Third step", "Fourth step", "Fifth step",
+                                        "Sixth step", "Seventh step", "Eigth step",
+                                        "Nineth step", "Tenth step")) %>% 
+  ggplot(aes(y=Scale_of_incomes, x=percent, colour=Scale_of_incomes)) + 
+  geom_point(alpha=0.7, size=2, shape=16) +
+  geom_errorbarh(aes(xmin=percent-error2sd, xmax=percent+error2sd,
+                     y=Scale_of_incomes, colour=Scale_of_incomes),
+                alpha=0.7, size=0.4, height=0.5) +
+  theme_me + ylab("important qualities") + 
+  scale_colour_viridis_d(option="plasma", end=.93) + 
+  xlab("percentage of respondents mentioning quality (95% Confidence Intervals)") +
+  xlim(0,100) + labs(subtitle="source: World Values Survey wave 6",
+    title="Important child qualities for New Zealand parents,\nby parent's income") +
+  facet_wrap(~behaviour, ncol=2) + theme(legend.position = "none")
+```
+
+
+## The importance of Tolerance and indicators of intolerance
+
+While Tolerance is an important quality for children to develop for 83% of New Zealand parents, for 13% of parents it was not mentioned. The W.V.S. also asks respondents about what kinds of people (if any) the respondent would not want as neighbours. Unsurprisingly, those respondents that are homophobic or racist are less likely to see Tolerance as an important quality in the next generation.
+
+```{r warning=FALSE}
+logistic_data <- wv6 %>% 
+  filter(Country_Code == "New Zealand", How_many_children_do_you_have !="None") %>% 
+  select(Tolerance=Child_Tolerance_and_respect_for_other_people, 
+         Would_not_like_to_have_as_neighbors_Drug_addicts:Would_not_like_to_have_as_neighbors_People_who_speak_a_different_language) %>%
+  mutate(row.n = row_number()) %>% 
+  gather(category, code, -row.n) %>% 
+  mutate(category = gsub("Would_not_like_to_have_as_neighbors_","", category),
+    mention = ifelse(code == "Mentioned", 1, 0)) %>% 
+  select(-code) %>% spread(category, mention) %>% select(-row.n)
+intolerance_model <- glm(Tolerance ~ People_who_have_AIDS  + 
+                           People_who_speak_a_different_language + 
+                           People_of_a_different_religion + 
+                           Drug_addicts + 
+                           Heavy_drinkers + 
+                           Homosexuals +
+                           Immigrants_foreign_workers +
+                           People_of_a_different_race +
+                           Unmarried_couples_living_together,
+                         data = logistic_data, family = binomial)
+summary(intolerance_model)
+```
+
+
+## Comparing different countries
+
+As each country can be summarised by the proportion of respondents that mentioned each of the 10 qualities, I can create a distance visualition of countries based on a principal components analysis of the 10 qualities. The first two components (so the distribution below) explain 55% of variance. Four components would account for 83% of the variation.
+
+Examing the loadings, the first component (accounting for ~36% of the variance in the data) is largely focused on the variables of Faith and Obedience. The second component (~20% of the variance) is strongly focused on the quality of Hard work.
+
+With 55% of the variance accounted for, culturally similar groups are clustering in the data. For example, New Zealand is very similar to Australia. This similarity needs the caveat the placement is being made from all the qualities, using only select qualities of interest would produce different groupings.
+
+```{r fig.height=8}
+
+all60 <- wv6 %>% 
+  filter(How_many_children_do_you_have !="None") %>% 
+  select(Country_Code, Survey_year, Year_of_birth,
+          Child_Independence:Child_Obedience) %>%
+  mutate_if(is.factor, as_character) %>%
+  gather(behaviour, mentions, 
+         Child_Independence:Child_Obedience) %>% 
+  filter(mentions == "Mentioned" | mentions == "Not mentioned") %>%
+  mutate(behaviour = gsub("Child_","", behaviour)) %>% 
+  group_by(Country_Code,behaviour) %>%
+  summarise(percent = 100*(1 - sum(mentions == "Not mentioned")/n())) %>%
+  ungroup() %>% spread(behaviour, percent, fill=0)
+
+pc_model <- princomp(all60[,2:11])
+scores <- pc_model[["scores"]]
+
+all60$component.1 <- scores[,1]
+all60$component.2 <- scores[,2]
+
+ggplot(all60, aes(x=component.1, y=component.2, label=Country_Code)) + geom_point() + geom_label_repel(colour=pal_me[1]) + theme_me + 
+  xlab("Principal Component 1") +
+  ylab("Principal Component 2") +
+  theme(axis.line=element_blank(), axis.text=element_blank(), axis.ticks=element_blank())
+```
+
+
+
